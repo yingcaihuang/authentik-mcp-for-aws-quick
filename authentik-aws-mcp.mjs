@@ -61,6 +61,9 @@ function validatePasswordComplexity(password) {
   if (typeof password !== "string") {
     return { ok: false, reason: "password 必须是字符串" };
   }
+  if (/\s/.test(password)) {
+    return { ok: false, reason: "password 不能包含空白字符（空格/换行/制表符）" };
+  }
   if (password.length < PASSWORD_MIN_LENGTH) {
     return { ok: false, reason: `password 长度至少 ${PASSWORD_MIN_LENGTH} 位` };
   }
@@ -84,8 +87,8 @@ function generateComplexPassword(length = PASSWORD_MIN_LENGTH) {
   const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
   const lower = "abcdefghijkmnopqrstuvwxyz";
   const nums = "23456789";
-  // 避免使用容易复制/输入出错的字符（如 []{}<>`'"\\）
-  const special = "!@#$%^&*()-_=+?.:,;";
+  // 仅使用在表格/markdown/IM 中不易被转义或破坏的字符
+  const special = "!@#$%^&*_-+=.";
   const all = `${upper}${lower}${nums}${special}`;
 
   function pick(chars) {
@@ -104,6 +107,10 @@ function generateComplexPassword(length = PASSWORD_MIN_LENGTH) {
   }
 
   return pwd.join("");
+}
+
+function toBase64(text) {
+  return Buffer.from(String(text), "utf8").toString("base64");
 }
 
 async function apiRequest(path, { method = "GET", body } = {}) {
@@ -669,6 +676,7 @@ server.tool(
                 action: "created",
                 user: { pk: created.pk, username: created.username, email: created.email, is_active: created.is_active },
                 generated_password: password ? undefined : createPassword,
+                generated_password_b64: password ? undefined : toBase64(createPassword),
               },
               null,
               2
@@ -1088,6 +1096,7 @@ server.tool(
               user: { pk: user.pk, username: user.username, email: user.email },
               group: { pk: group.pk, name: group.name },
               generated_password: randomPassword,
+              generated_password_b64: toBase64(randomPassword),
             },
             null,
             2
@@ -1169,6 +1178,7 @@ server.tool(
           username: user.username,
           status: "created",
           generated_password: randomPassword,
+          generated_password_b64: toBase64(randomPassword),
         });
       } catch (e) {
         failedCount += 1;
@@ -1251,6 +1261,97 @@ server.tool(
                 email: finalUser.email,
               },
               new_password: nextPassword,
+              new_password_b64: toBase64(nextPassword),
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "bulk_reset_password",
+  "批量重置密码（支持 email/username/user_pk 混合输入）",
+  {
+    users: z
+      .array(
+        z.object({
+          email: z.string().email().optional(),
+          username: z.string().optional(),
+          user_pk: z.number().int().positive().optional(),
+          password: z.string().optional().describe("可选：该用户指定新密码；不传则自动生成"),
+        })
+      )
+      .min(1),
+    continue_on_error: z.boolean().optional().describe("单个失败是否继续，默认 true"),
+  },
+  async ({ users, continue_on_error = true }) => {
+    const results = [];
+    let success = 0;
+    let failed = 0;
+
+    for (const item of users) {
+      try {
+        let resolvedUserPk = item.user_pk;
+        let userObj = null;
+
+        if (!resolvedUserPk) {
+          if (!item.username && !item.email) {
+            throw new Error("缺少定位字段（需要 user_pk 或 username/email）");
+          }
+          userObj = await getUserByUsernameOrEmail({ username: item.username, email: item.email });
+          if (!userObj) throw new Error("未找到用户");
+          resolvedUserPk = userObj.pk;
+        } else {
+          userObj = await apiRequest(`/core/users/${resolvedUserPk}/`);
+        }
+
+        const nextPassword = item.password || generateComplexPassword();
+        const pwdCheck = validatePasswordComplexity(nextPassword);
+        if (!pwdCheck.ok) {
+          throw new Error(`密码复杂度不满足: ${pwdCheck.reason}`);
+        }
+
+        const resetResult = await resetUserPassword({ userPk: resolvedUserPk, password: nextPassword });
+
+        success += 1;
+        results.push({
+          target: { email: item.email, username: item.username, user_pk: item.user_pk },
+          status: "success",
+          method: resetResult.method,
+          user: { pk: userObj.pk, username: userObj.username, email: userObj.email },
+          new_password: nextPassword,
+          new_password_b64: toBase64(nextPassword),
+        });
+      } catch (e) {
+        failed += 1;
+        results.push({
+          target: { email: item.email, username: item.username, user_pk: item.user_pk },
+          status: "failed",
+          error: String(e?.message || e),
+        });
+        if (!continue_on_error) {
+          throw new Error(`批量重置终止: ${String(e?.message || e)}`);
+        }
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              message: "批量重置密码完成",
+              summary: {
+                total: users.length,
+                success,
+                failed,
+              },
+              results,
             },
             null,
             2
@@ -1328,6 +1429,7 @@ server.tool(
                 email: finalUser.email,
               },
               new_password: nextPassword,
+              new_password_b64: toBase64(nextPassword),
             },
             null,
             2

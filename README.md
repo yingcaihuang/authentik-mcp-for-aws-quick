@@ -19,6 +19,7 @@
 - 一句话开通并自动加组（组不存在自动创建，返回随机密码）
 - 批量一句话开通（批量创建并加入同组）
 - 重置用户密码（支持自动生成随机密码并返回）
+- 批量重置用户密码（支持 email/username/user_pk 混合输入）
 - 强制重置并尝试发送邮件通知
 
 服务脚本：`authentik-aws-mcp.mjs`
@@ -348,6 +349,10 @@ npm pkg set type=module
 }
 ```
 
+返回中会同时包含：
+- `generated_password`：明文密码
+- `generated_password_b64`：Base64 密码（用于避免聊天/表格转义导致复制错误）
+
 ### 4.14 `bulk_delete_users`
 
 批量删除用户（支持 `email` / `username` / `user_pk`，支持不存在跳过）：
@@ -401,6 +406,25 @@ npm pkg set type=module
   "create_missing_groups": true
 }
 ```
+
+### 4.17 `bulk_reset_password`
+
+批量重置密码（支持混合输入）：
+
+```json
+{
+  "users": [
+    { "email": "admin1@qq.com" },
+    { "username": "admin2" },
+    { "user_pk": 123 }
+  ],
+  "continue_on_error": true
+}
+```
+
+每个成功项会返回：
+- `new_password`
+- `new_password_b64`
 
 `provision_user_default` 调用时指定组示例：
 
@@ -559,6 +583,12 @@ node --check authentik-aws-mcp.mjs
 }
 ```
 
+返回中同时包含：
+- `new_password`
+- `new_password_b64`
+
+若你怀疑复制时被转义，建议优先使用 b64 还原。
+
 ### 6.9 `force_reset_password_and_notify`
 
 自然语言：
@@ -707,7 +737,26 @@ node --check authentik-aws-mcp.mjs
 }
 ```
 
-### 6.18 通用对话模板（推荐）
+### 6.18 `bulk_reset_password`
+
+自然语言：
+
+> 批量重置 admin1@qq.com 到 admin10@qq.com 的密码，并返回每个人的新密码和 b64。
+
+参数 JSON：
+
+```json
+{
+  "users": [
+    { "email": "admin1@qq.com" },
+    { "email": "admin2@qq.com" },
+    { "email": "admin3@qq.com" }
+  ],
+  "continue_on_error": true
+}
+```
+
+### 6.19 通用对话模板（推荐）
 
 你可以固定这样对大模型说：
 
@@ -774,4 +823,17 @@ node --check authentik-aws-mcp.mjs
 {
   "email": "dev@qq.com"
 }
+```
+
+### 批量创建后密码登录失败怎么办
+
+优先排查是否“复制时被转义/变形”：
+
+1. 使用结果里的 `generated_password_b64`（或 `new_password_b64`）进行还原后再登录
+2. 若仍失败，直接调用 `reset_user_password` 重新生成一次密码再试
+
+Node 本地还原示例：
+
+```bash
+node -e "console.log(Buffer.from('这里放b64','base64').toString('utf8'))"
 ```
