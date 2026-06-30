@@ -7,6 +7,7 @@
 - 列出组
 - 添加组
 - 创建用户
+- 删除用户
 - 在组中添加用户
 - 默认开通用户（创建用户并加入默认组）
 - 一句话开通并自动加组（组不存在自动创建，返回随机密码）
@@ -111,7 +112,38 @@ npm pkg set type=module
 }
 ```
 
-### 4.4 `add_user_to_group`
+### 4.4 `delete_user`
+
+删除用户，支持按 `email` / `username` / `user_pk`。
+
+方式 A：按邮箱删除（推荐）
+
+```json
+{
+  "email": "dev@qq.com",
+  "if_not_exists": true
+}
+```
+
+方式 B：按用户名删除
+
+```json
+{
+  "username": "dev",
+  "if_not_exists": true
+}
+```
+
+方式 C：按 user_pk 删除
+
+```json
+{
+  "user_pk": 123,
+  "if_not_exists": true
+}
+```
+
+### 4.5 `add_user_to_group`
 
 方式 A（用户名 + 组名）：
 
@@ -140,7 +172,7 @@ npm pkg set type=module
 }
 ```
 
-### 4.5 `provision_user_default`
+### 4.6 `provision_user_default`
 
 使用默认组（来自 `AUTHENTIK_DEFAULT_GROUPS`）：
 
@@ -153,7 +185,7 @@ npm pkg set type=module
 }
 ```
 
-### 4.6 `quick_add_user_to_group`（推荐：一句话开通）
+### 4.7 `quick_add_user_to_group`（推荐：一句话开通）
 
 场景：你希望一句话完成“如果组不存在就创建、再创建用户、并自动加到组里、最后返回随机密码”。
 
@@ -184,7 +216,7 @@ npm pkg set type=module
 }
 ```
 
-### 4.7 `reset_user_password`
+### 4.8 `reset_user_password`
 
 重置用户密码，支持指定密码或自动随机生成。
 
@@ -213,7 +245,7 @@ npm pkg set type=module
 }
 ```
 
-### 4.8 `force_reset_password_and_notify`
+### 4.9 `force_reset_password_and_notify`
 
 强制重置密码，并尝试调用 authentik 邮件通知端点发送通知。
 
@@ -333,7 +365,22 @@ node --check authentik-aws-mcp.mjs
 }
 ```
 
-### 6.4 `add_user_to_group`
+### 6.4 `delete_user`
+
+自然语言：
+
+> 删除用户 dev@qq.com；如果不存在就直接跳过，不要报错。
+
+参数 JSON：
+
+```json
+{
+  "email": "dev@qq.com",
+  "if_not_exists": true
+}
+```
+
+### 6.5 `add_user_to_group`
 
 自然语言：
 
@@ -348,7 +395,7 @@ node --check authentik-aws-mcp.mjs
 }
 ```
 
-### 6.5 `provision_user_default`
+### 6.6 `provision_user_default`
 
 自然语言：
 
@@ -365,7 +412,7 @@ node --check authentik-aws-mcp.mjs
 }
 ```
 
-### 6.6 `quick_add_user_to_group`（一句话开通推荐）
+### 6.7 `quick_add_user_to_group`（一句话开通推荐）
 
 自然语言：
 
@@ -380,7 +427,7 @@ node --check authentik-aws-mcp.mjs
 }
 ```
 
-### 6.7 `reset_user_password`
+### 6.8 `reset_user_password`
 
 自然语言：
 
@@ -394,7 +441,7 @@ node --check authentik-aws-mcp.mjs
 }
 ```
 
-### 6.8 `force_reset_password_and_notify`
+### 6.9 `force_reset_password_and_notify`
 
 自然语言：
 
@@ -409,7 +456,7 @@ node --check authentik-aws-mcp.mjs
 }
 ```
 
-### 6.9 通用对话模板（推荐）
+### 6.10 通用对话模板（推荐）
 
 你可以固定这样对大模型说：
 

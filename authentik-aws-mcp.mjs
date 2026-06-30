@@ -6,6 +6,7 @@
  * - list_groups
  * - create_group
  * - create_user
+ * - delete_user
  * - add_user_to_group
  * - provision_user_default
  *
@@ -185,6 +186,12 @@ async function createUser({ username, name, email, password, is_active = true })
       is_active,
       password,
     },
+  });
+}
+
+async function deleteUserByPk(userPk) {
+  return apiRequest(`/core/users/${userPk}/`, {
+    method: "DELETE",
   });
 }
 
@@ -383,6 +390,58 @@ server.tool(
         {
           type: "text",
           text: `创建用户成功: username=${user.username}, email=${user.email}, pk=${user.pk}`,
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "delete_user",
+  "删除 authentik 用户（支持 username/email/user_pk）",
+  {
+    username: z.string().optional(),
+    email: z.string().email().optional(),
+    user_pk: z.number().int().positive().optional(),
+    if_not_exists: z.boolean().optional().describe("用户不存在时是否不报错，默认 true"),
+  },
+  async ({ username, email, user_pk, if_not_exists = true }) => {
+    let resolvedUserPk = user_pk;
+    let userObj = null;
+
+    if (!resolvedUserPk) {
+      if (!username && !email) {
+        throw new Error("请提供 user_pk 或 username/email");
+      }
+      userObj = await getUserByUsernameOrEmail({ username, email });
+      if (!userObj) {
+        if (if_not_exists) {
+          return {
+            content: [{ type: "text", text: "用户不存在，已跳过删除" }],
+          };
+        }
+        throw new Error("未找到用户");
+      }
+      resolvedUserPk = userObj.pk;
+    } else {
+      try {
+        userObj = await apiRequest(`/core/users/${resolvedUserPk}/`);
+      } catch (e) {
+        if (if_not_exists) {
+          return {
+            content: [{ type: "text", text: `用户 pk=${resolvedUserPk} 不存在，已跳过删除` }],
+          };
+        }
+        throw e;
+      }
+    }
+
+    await deleteUserByPk(resolvedUserPk);
+    return {
+      content: [
+        {
+          type: "text",
+          text: `删除用户成功: pk=${resolvedUserPk}, username=${userObj?.username || "-"}, email=${userObj?.email || "-"}`,
         },
       ],
     };
