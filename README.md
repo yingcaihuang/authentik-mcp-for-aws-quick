@@ -8,9 +8,16 @@
 - 添加组
 - 创建用户
 - 删除用户
+- 批量删除用户
+- 列出用户
+- 禁用/启用用户
+- 用户存在则更新，不存在则创建（upsert）
 - 在组中添加用户
+- 从组中移除用户
+- 同步用户组（merge/replace）
 - 默认开通用户（创建用户并加入默认组）
 - 一句话开通并自动加组（组不存在自动创建，返回随机密码）
+- 批量一句话开通（批量创建并加入同组）
 - 重置用户密码（支持自动生成随机密码并返回）
 - 强制重置并尝试发送邮件通知
 
@@ -284,6 +291,117 @@ npm pkg set type=module
 - `notify.errors`：通知失败时，各尝试端点的错误
 - `new_password`：新密码（请妥善保存）
 
+### 4.10 `list_users`
+
+列出用户，支持搜索、分页、按组过滤。
+
+```json
+{
+  "search": "dev",
+  "group_name": "awsv1",
+  "page": 1,
+  "page_size": 50
+}
+```
+
+### 4.11 `disable_user` / `enable_user`
+
+禁用用户：
+
+```json
+{
+  "email": "dev@qq.com"
+}
+```
+
+启用用户：
+
+```json
+{
+  "email": "dev@qq.com"
+}
+```
+
+### 4.12 `remove_user_from_group`
+
+把用户从组中移除：
+
+```json
+{
+  "email": "dev@qq.com",
+  "group_name": "awsv1"
+}
+```
+
+### 4.13 `bulk_quick_add_users_to_group`
+
+批量开通并加入同一组（组不存在自动创建）：
+
+```json
+{
+  "group_name": "awsv1",
+  "users": [
+    { "email": "dev1@qq.com", "username": "dev1", "name": "Dev 1" },
+    { "email": "dev2@qq.com", "username": "dev2", "name": "Dev 2" }
+  ],
+  "continue_on_error": true
+}
+```
+
+### 4.14 `bulk_delete_users`
+
+批量删除用户（支持 `email` / `username` / `user_pk`，支持不存在跳过）：
+
+```json
+{
+  "users": [
+    { "email": "dev1@qq.com" },
+    { "username": "dev2" },
+    { "user_pk": 123 }
+  ],
+  "if_not_exists": true,
+  "continue_on_error": true
+}
+```
+
+### 4.15 `upsert_user`
+
+用户存在则更新，不存在则创建：
+
+```json
+{
+  "username": "dev",
+  "name": "Dev User",
+  "email": "dev@qq.com",
+  "is_active": true
+}
+```
+
+更新时顺便重置密码：
+
+```json
+{
+  "username": "dev",
+  "name": "Dev User",
+  "email": "dev@qq.com",
+  "password": "Aa123456!@#",
+  "reset_password_on_update": true
+}
+```
+
+### 4.16 `sync_user_groups`
+
+同步用户组（`merge` 并集 / `replace` 完全替换）：
+
+```json
+{
+  "email": "dev@qq.com",
+  "groups": ["awsv1", "developers"],
+  "mode": "replace",
+  "create_missing_groups": true
+}
+```
+
 `provision_user_default` 调用时指定组示例：
 
 ```json
@@ -456,7 +574,140 @@ node --check authentik-aws-mcp.mjs
 }
 ```
 
-### 6.10 通用对话模板（推荐）
+### 6.10 `list_users`
+
+自然语言：
+
+> 列出 awsv1 组里的用户，搜索 dev，第 1 页每页 50 条。
+
+参数 JSON：
+
+```json
+{
+  "search": "dev",
+  "group_name": "awsv1",
+  "page": 1,
+  "page_size": 50
+}
+```
+
+### 6.11 `disable_user`
+
+自然语言：
+
+> 禁用用户 dev@qq.com。
+
+参数 JSON：
+
+```json
+{
+  "email": "dev@qq.com"
+}
+```
+
+### 6.12 `enable_user`
+
+自然语言：
+
+> 启用用户 dev@qq.com。
+
+参数 JSON：
+
+```json
+{
+  "email": "dev@qq.com"
+}
+```
+
+### 6.13 `remove_user_from_group`
+
+自然语言：
+
+> 把 dev@qq.com 从 awsv1 组移除。
+
+参数 JSON：
+
+```json
+{
+  "email": "dev@qq.com",
+  "group_name": "awsv1"
+}
+```
+
+### 6.14 `bulk_quick_add_users_to_group`
+
+自然语言：
+
+> 批量开通 dev1@qq.com 和 dev2@qq.com 到 awsv1，组不存在自动创建。
+
+参数 JSON：
+
+```json
+{
+  "group_name": "awsv1",
+  "users": [
+    { "email": "dev1@qq.com", "username": "dev1", "name": "Dev 1" },
+    { "email": "dev2@qq.com", "username": "dev2", "name": "Dev 2" }
+  ],
+  "continue_on_error": true
+}
+```
+
+### 6.15 `bulk_delete_users`
+
+自然语言：
+
+> 批量删除 dev1@qq.com、dev2 和 user_pk=123，不存在就跳过。
+
+参数 JSON：
+
+```json
+{
+  "users": [
+    { "email": "dev1@qq.com" },
+    { "username": "dev2" },
+    { "user_pk": 123 }
+  ],
+  "if_not_exists": true,
+  "continue_on_error": true
+}
+```
+
+### 6.16 `upsert_user`
+
+自然语言：
+
+> upsert 用户 dev@qq.com：存在就更新，不存在就创建。
+
+参数 JSON：
+
+```json
+{
+  "username": "dev",
+  "name": "Dev User",
+  "email": "dev@qq.com",
+  "is_active": true
+}
+```
+
+### 6.17 `sync_user_groups`
+
+自然语言：
+
+> 把 dev@qq.com 的组同步为 awsv1 和 developers（replace 模式，不在列表里的组都移除）。
+
+参数 JSON：
+
+```json
+{
+  "email": "dev@qq.com",
+  "groups": ["awsv1", "developers"],
+  "mode": "replace",
+  "create_missing_groups": true
+}
+```
+
+### 6.18 通用对话模板（推荐）
 
 你可以固定这样对大模型说：
 

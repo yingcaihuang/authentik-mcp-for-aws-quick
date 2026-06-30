@@ -4,10 +4,15 @@
  *
  * MCP Server for authentik API v3:
  * - list_groups
+ * - list_users
  * - create_group
  * - create_user
  * - delete_user
+ * - disable_user / enable_user
+ * - upsert_user
  * - add_user_to_group
+ * - remove_user_from_group
+ * - sync_user_groups
  * - provision_user_default
  *
  * Required env vars (configure in MCP JSON):
@@ -189,6 +194,13 @@ async function createUser({ username, name, email, password, is_active = true })
   });
 }
 
+async function updateUserByPk(userPk, fields) {
+  return apiRequest(`/core/users/${userPk}/`, {
+    method: "PATCH",
+    body: fields,
+  });
+}
+
 async function deleteUserByPk(userPk) {
   return apiRequest(`/core/users/${userPk}/`, {
     method: "DELETE",
@@ -200,6 +212,28 @@ async function addUserToGroup({ userPk, groupPk }) {
   const current = await apiRequest(`/core/users/${userPk}/`);
   const existing = Array.isArray(current?.groups) ? current.groups : [];
   const next = Array.from(new Set([...existing, groupPk]));
+
+  return apiRequest(`/core/users/${userPk}/`, {
+    method: "PATCH",
+    body: {
+      groups: next,
+    },
+  });
+}
+
+async function setUserActiveStatus({ userPk, isActive }) {
+  return apiRequest(`/core/users/${userPk}/`, {
+    method: "PATCH",
+    body: {
+      is_active: isActive,
+    },
+  });
+}
+
+async function removeUserFromGroup({ userPk, groupPk }) {
+  const current = await apiRequest(`/core/users/${userPk}/`);
+  const existing = Array.isArray(current?.groups) ? current.groups : [];
+  const next = existing.filter((x) => String(x) !== String(groupPk));
 
   return apiRequest(`/core/users/${userPk}/`, {
     method: "PATCH",
@@ -300,6 +334,70 @@ server.tool(
           text: JSON.stringify(
             {
               count: data?.count ?? results.length,
+              results,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "list_users",
+  "列出 authentik 用户（支持搜索、分页、按组过滤）",
+  {
+    search: z.string().optional().describe("可选：按用户名/邮箱搜索"),
+    group_name: z.string().optional().describe("可选：按组名过滤"),
+    group_pk: z.string().optional().describe("可选：按组 PK 过滤"),
+    page: z.number().int().positive().optional(),
+    page_size: z.number().int().positive().max(200).optional(),
+  },
+  async ({ search = "", group_name, group_pk, page = 1, page_size = 50 }) => {
+    let usersData = await listUsers({ search, page, page_size });
+    let users = usersData?.results || [];
+
+    let targetGroupPk = group_pk;
+    if (!targetGroupPk && group_name) {
+      const g = await getGroupByName(group_name);
+      if (!g) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ count: 0, results: [], message: `组不存在: ${group_name}` }, null, 2),
+            },
+          ],
+        };
+      }
+      targetGroupPk = g.pk;
+    }
+
+    if (targetGroupPk) {
+      users = users.filter((u) => Array.isArray(u.groups) && u.groups.map(String).includes(String(targetGroupPk)));
+    }
+
+    const results = users.map((u) => ({
+      pk: u.pk,
+      username: u.username,
+      name: u.name,
+      email: u.email,
+      is_active: u.is_active,
+      groups: u.groups,
+    }));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              count: targetGroupPk ? results.length : usersData?.count ?? results.length,
+              page,
+              page_size,
+              filtered_by_group_pk: targetGroupPk || undefined,
               results,
             },
             null,
@@ -449,6 +547,230 @@ server.tool(
 );
 
 server.tool(
+  "bulk_delete_users",
+  "批量删除用户（支持 email/username/user_pk，支持不存在跳过）",
+  {
+    users: z
+      .array(
+        z.object({
+          email: z.string().email().optional(),
+          username: z.string().optional(),
+          user_pk: z.number().int().positive().optional(),
+        })
+      )
+      .min(1),
+    if_not_exists: z.boolean().optional().describe("用户不存在时是否跳过，默认 true"),
+    continue_on_error: z.boolean().optional().describe("单个失败是否继续，默认 true"),
+  },
+  async ({ users, if_not_exists = true, continue_on_error = true }) => {
+    const results = [];
+    let deleted = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const item of users) {
+      try {
+        let resolvedUserPk = item.user_pk;
+        let userObj = null;
+
+        if (!resolvedUserPk) {
+          if (!item.username && !item.email) {
+            throw new Error("缺少定位字段（需要 user_pk 或 username/email）");
+          }
+          userObj = await getUserByUsernameOrEmail({ username: item.username, email: item.email });
+          if (!userObj) {
+            if (if_not_exists) {
+              skipped += 1;
+              results.push({ target: item, status: "skipped", message: "用户不存在，已跳过" });
+              continue;
+            }
+            throw new Error("未找到用户");
+          }
+          resolvedUserPk = userObj.pk;
+        } else {
+          try {
+            userObj = await apiRequest(`/core/users/${resolvedUserPk}/`);
+          } catch (e) {
+            if (if_not_exists) {
+              skipped += 1;
+              results.push({ target: item, status: "skipped", message: "用户不存在，已跳过" });
+              continue;
+            }
+            throw e;
+          }
+        }
+
+        await deleteUserByPk(resolvedUserPk);
+        deleted += 1;
+        results.push({
+          target: item,
+          status: "deleted",
+          user: { pk: resolvedUserPk, username: userObj?.username, email: userObj?.email },
+        });
+      } catch (e) {
+        failed += 1;
+        results.push({ target: item, status: "failed", error: String(e?.message || e) });
+        if (!continue_on_error) {
+          throw new Error(`批量删除终止: ${String(e?.message || e)}`);
+        }
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              message: "批量删除完成",
+              summary: { total: users.length, deleted, skipped, failed },
+              results,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "upsert_user",
+  "用户存在则更新，不存在则创建",
+  {
+    username: z.string().min(3).max(64),
+    name: z.string().min(1).max(128),
+    email: z.string().email(),
+    password: z.string().optional().describe("可选：创建时建议传；更新时传则重置密码"),
+    is_active: z.boolean().optional(),
+    reset_password_on_update: z.boolean().optional().describe("更新用户时是否重置密码，默认 false"),
+  },
+  async ({ username, name, email, password, is_active = true, reset_password_on_update = false }) => {
+    if (!validateUsername(username)) throw new Error("用户名不合法：仅允许 3-64 位字母/数字/._-");
+    if (!validateDisplayName(name)) throw new Error("显示名不合法：1-128 字符");
+    if (!validateEmail(email)) throw new Error("邮箱格式不合法");
+
+    let existing = await getUserByUsernameOrEmail({ username, email });
+    if (!existing) {
+      const createPassword = password || generateComplexPassword();
+      const pwd = validatePasswordComplexity(createPassword);
+      if (!pwd.ok) throw new Error(`密码复杂度不满足: ${pwd.reason}`);
+
+      const created = await createUser({ username, name, email, password: createPassword, is_active });
+      await resetUserPassword({ userPk: created.pk, password: createPassword });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                action: "created",
+                user: { pk: created.pk, username: created.username, email: created.email, is_active: created.is_active },
+                generated_password: password ? undefined : createPassword,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    const updated = await updateUserByPk(existing.pk, {
+      username,
+      name,
+      email,
+      is_active,
+    });
+
+    let passwordReset = false;
+    if (password && reset_password_on_update) {
+      const pwd = validatePasswordComplexity(password);
+      if (!pwd.ok) throw new Error(`密码复杂度不满足: ${pwd.reason}`);
+      await resetUserPassword({ userPk: existing.pk, password });
+      passwordReset = true;
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              action: "updated",
+              user: { pk: updated.pk, username: updated.username, email: updated.email, is_active: updated.is_active },
+              password_reset: passwordReset,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "disable_user",
+  "禁用用户（is_active=false）",
+  {
+    username: z.string().optional(),
+    email: z.string().email().optional(),
+    user_pk: z.number().int().positive().optional(),
+  },
+  async ({ username, email, user_pk }) => {
+    let resolvedUserPk = user_pk;
+    if (!resolvedUserPk) {
+      if (!username && !email) throw new Error("请提供 user_pk 或 username/email");
+      const user = await getUserByUsernameOrEmail({ username, email });
+      if (!user) throw new Error("未找到用户");
+      resolvedUserPk = user.pk;
+    }
+
+    const updated = await setUserActiveStatus({ userPk: resolvedUserPk, isActive: false });
+    return {
+      content: [
+        {
+          type: "text",
+          text: `已禁用用户: pk=${updated.pk}, username=${updated.username}, email=${updated.email}`,
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "enable_user",
+  "启用用户（is_active=true）",
+  {
+    username: z.string().optional(),
+    email: z.string().email().optional(),
+    user_pk: z.number().int().positive().optional(),
+  },
+  async ({ username, email, user_pk }) => {
+    let resolvedUserPk = user_pk;
+    if (!resolvedUserPk) {
+      if (!username && !email) throw new Error("请提供 user_pk 或 username/email");
+      const user = await getUserByUsernameOrEmail({ username, email });
+      if (!user) throw new Error("未找到用户");
+      resolvedUserPk = user.pk;
+    }
+
+    const updated = await setUserActiveStatus({ userPk: resolvedUserPk, isActive: true });
+    return {
+      content: [
+        {
+          type: "text",
+          text: `已启用用户: pk=${updated.pk}, username=${updated.username}, email=${updated.email}`,
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
   "add_user_to_group",
   "将用户添加到组（可用用户名/邮箱+组名，或直接用 user_pk/group_pk）",
   {
@@ -486,6 +808,119 @@ server.tool(
         {
           type: "text",
           text: `已将用户 ${patched.username} (pk=${patched.pk}) 添加到组 ${resolvedGroupPk}`,
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "remove_user_from_group",
+  "将用户从组中移除（可用用户名/邮箱+组名，或直接用 user_pk/group_pk）",
+  {
+    username: z.string().optional(),
+    email: z.string().email().optional(),
+    user_pk: z.number().int().positive().optional(),
+    group_name: z.string().optional(),
+    group_pk: z.string().optional(),
+  },
+  async ({ username, email, user_pk, group_name, group_pk }) => {
+    let resolvedUserPk = user_pk;
+    if (!resolvedUserPk) {
+      if (!username && !email) {
+        throw new Error("请提供 user_pk 或 username/email");
+      }
+      const user = await getUserByUsernameOrEmail({ username, email });
+      if (!user) throw new Error("未找到用户");
+      resolvedUserPk = user.pk;
+    }
+
+    let resolvedGroupPk = group_pk;
+    if (!resolvedGroupPk) {
+      if (!group_name) {
+        throw new Error("请提供 group_pk 或 group_name");
+      }
+      const group = await getGroupByName(group_name);
+      if (!group) throw new Error(`未找到组: ${group_name}`);
+      resolvedGroupPk = group.pk;
+    }
+
+    const patched = await removeUserFromGroup({ userPk: resolvedUserPk, groupPk: resolvedGroupPk });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `已将用户 ${patched.username} (pk=${patched.pk}) 从组 ${resolvedGroupPk} 移除`,
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "sync_user_groups",
+  "同步用户组：merge（并集）或 replace（完全替换）",
+  {
+    username: z.string().optional(),
+    email: z.string().email().optional(),
+    user_pk: z.number().int().positive().optional(),
+    groups: z.array(z.string().min(1)).describe("目标组名列表"),
+    mode: z.enum(["merge", "replace"]).optional().describe("merge=并集，replace=完全替换，默认 merge"),
+    create_missing_groups: z.boolean().optional().describe("缺失组是否自动创建，默认 true"),
+  },
+  async ({ username, email, user_pk, groups, mode = "merge", create_missing_groups = true }) => {
+    let resolvedUserPk = user_pk;
+    if (!resolvedUserPk) {
+      if (!username && !email) throw new Error("请提供 user_pk 或 username/email");
+      const user = await getUserByUsernameOrEmail({ username, email });
+      if (!user) throw new Error("未找到用户");
+      resolvedUserPk = user.pk;
+    }
+
+    const userCurrent = await apiRequest(`/core/users/${resolvedUserPk}/`);
+    const currentGroupPks = Array.isArray(userCurrent.groups) ? userCurrent.groups.map(String) : [];
+
+    const targetGroupPks = [];
+    const targetGroupsResolved = [];
+    for (const gName of groups) {
+      let g = await getGroupByName(gName);
+      if (!g) {
+        if (!create_missing_groups) throw new Error(`组不存在: ${gName}`);
+        g = await createGroup(gName, false);
+      }
+      targetGroupPks.push(String(g.pk));
+      targetGroupsResolved.push({ name: g.name, pk: g.pk });
+    }
+
+    let nextGroupPks = [];
+    if (mode === "replace") {
+      nextGroupPks = Array.from(new Set(targetGroupPks));
+    } else {
+      nextGroupPks = Array.from(new Set([...currentGroupPks, ...targetGroupPks]));
+    }
+
+    const patched = await apiRequest(`/core/users/${resolvedUserPk}/`, {
+      method: "PATCH",
+      body: { groups: nextGroupPks },
+    });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              message: "用户组同步成功",
+              mode,
+              user: { pk: patched.pk, username: patched.username, email: patched.email },
+              current_groups: currentGroupPks,
+              target_groups: targetGroupsResolved,
+              final_groups: nextGroupPks,
+            },
+            null,
+            2
+          ),
         },
       ],
     };
@@ -653,6 +1088,112 @@ server.tool(
               user: { pk: user.pk, username: user.username, email: user.email },
               group: { pk: group.pk, name: group.name },
               generated_password: randomPassword,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "bulk_quick_add_users_to_group",
+  "批量一句话开通：批量创建用户并加入同一组（组不存在自动创建）",
+  {
+    group_name: z.string().min(1).describe("目标组名（必填）"),
+    users: z
+      .array(
+        z.object({
+          email: z.string().email(),
+          username: z.string().min(3).max(64).optional(),
+          name: z.string().min(1).max(128).optional(),
+        })
+      )
+      .min(1)
+      .describe("用户列表"),
+    is_active: z.boolean().optional(),
+    continue_on_error: z.boolean().optional().describe("遇到单个失败是否继续，默认 true"),
+  },
+  async ({ group_name, users, is_active = true, continue_on_error = true }) => {
+    let group = await getGroupByName(group_name);
+    if (!group) {
+      group = await createGroup(group_name, false);
+    }
+
+    const results = [];
+    let createdCount = 0;
+    let existedCount = 0;
+    let failedCount = 0;
+
+    for (const item of users) {
+      try {
+        const email = item.email;
+        const emailPrefix = email.split("@")[0] || "user";
+        const resolvedUsername = item.username || emailPrefix;
+        const resolvedName = item.name || emailPrefix;
+
+        if (!validateEmail(email)) throw new Error("邮箱格式不合法");
+        if (!validateUsername(resolvedUsername)) throw new Error("用户名不合法");
+        if (!validateDisplayName(resolvedName)) throw new Error("显示名不合法");
+
+        let user = await getUserByUsernameOrEmail({ username: resolvedUsername, email });
+        if (user) {
+          await addUserToGroup({ userPk: user.pk, groupPk: group.pk });
+          existedCount += 1;
+          results.push({
+            email,
+            username: user.username,
+            status: "exists",
+            message: "用户已存在，已确保加入组",
+          });
+          continue;
+        }
+
+        const randomPassword = generateComplexPassword();
+        user = await createUser({
+          username: resolvedUsername,
+          name: resolvedName,
+          email,
+          password: randomPassword,
+          is_active,
+        });
+
+        await resetUserPassword({ userPk: user.pk, password: randomPassword });
+        await addUserToGroup({ userPk: user.pk, groupPk: group.pk });
+
+        createdCount += 1;
+        results.push({
+          email,
+          username: user.username,
+          status: "created",
+          generated_password: randomPassword,
+        });
+      } catch (e) {
+        failedCount += 1;
+        results.push({ email: item.email, status: "failed", error: String(e?.message || e) });
+        if (!continue_on_error) {
+          throw new Error(`批量处理终止，失败用户 ${item.email}: ${String(e?.message || e)}`);
+        }
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              message: "批量处理完成",
+              group: { pk: group.pk, name: group.name },
+              summary: {
+                total: users.length,
+                created: createdCount,
+                existed: existedCount,
+                failed: failedCount,
+              },
+              results,
             },
             null,
             2
