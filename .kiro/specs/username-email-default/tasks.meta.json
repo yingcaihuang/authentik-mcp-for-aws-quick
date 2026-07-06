@@ -1,0 +1,166 @@
+{
+  "pbtResults": {
+    "1. Write bug condition exploration test": {
+      "status": "passed",
+      "failingExample": "Counterexamples found (all confirm bug exists):\n\n1. validateUsername(\"test@example.com\") returns false (expected true) - regex /^[a-zA-Z0-9_.-]{3,64}$/ rejects @ character\n2. validateUsername(\"ping.wang@verycloud.cn\") returns false (expected true)\n3. PBT shrunk counterexample: validateUsername(\"a@a.aa\") returns false\n\n4. resolveUsernameQuickAdd({email: \"ping.wang@verycloud.cn\", username: undefined}) returns \"ping.wang\" (expected \"ping.wang@verycloud.cn\")\n5. PBT shrunk counterexample: resolveUsernameQuickAdd({email: \"a@a.aa\", username: undefined}) returns \"a\" (expected \"a@a.aa\")\n\n6. resolveUsernameBulkAdd({email: \"li.wei@verycloud.cn\", username: undefined}) returns \"li.wei\" (expected \"li.wei@verycloud.cn\")\n7. PBT shrunk counterexample: resolveUsernameBulkAdd({email: \"a@a.aa\", username: undefined}) returns \"a\" (expected \"a@a.aa\")",
+      "lastRunTimestamp": 1783305323503
+    },
+    "2. Write preservation property tests (BEFORE implementing fix)": {
+      "status": "passed",
+      "lastRunTimestamp": 1783305458969
+    },
+    "3.4 Verify bug condition exploration test now passes": {
+      "status": "passed",
+      "lastRunTimestamp": 1783305807717
+    },
+    "3.5 Verify preservation tests still pass": {
+      "status": "passed",
+      "lastRunTimestamp": 1783305884615
+    }
+  },
+  "executionHistory": {
+    "1. Write bug condition exploration test": [
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305095237
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305106730
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305344300
+      }
+    ],
+    "2. Write preservation property tests (BEFORE implementing fix)": [
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305095276
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305350460
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305478150
+      }
+    ],
+    "3.1 Modify `validateUsername` to accept email-format usernames": [
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305095310
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305492036
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305569540
+      }
+    ],
+    "3.2 Change default username in `quick_add_user_to_group` from `emailPrefix` to full `email`": [
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305095361
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305575785
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305636706
+      }
+    ],
+    "3.3 Change default username in `bulk_quick_add_users_to_group` from `emailPrefix` to full `email`": [
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305095387
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305642716
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305691789
+      }
+    ],
+    "3.4 Verify bug condition exploration test now passes": [
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305095416
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305697783
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305823780
+      }
+    ],
+    "3.5 Verify preservation tests still pass": [
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305095443
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305829565
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305900642
+      }
+    ],
+    "4. Checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305095467
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305907485
+      },
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783306004658
+      }
+    ],
+    "3. Fix for username defaulting to email prefix instead of full email": [
+      {
+        "executionId": "6efbbe23-9ed3-4c1f-9aaf-b8521f0003cf",
+        "chatSessionId": "sess_021cc8d6-8a80-4037-a537-cfae01c17516",
+        "timestamp": 1783305900689
+      }
+    ]
+  }
+}

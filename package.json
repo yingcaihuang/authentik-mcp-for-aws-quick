@@ -4,7 +4,7 @@
   "description": "用于通过 `https://authsso.verycloud.cn/api/v3/` 管理 authentik 的 MCP Server。",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest --run"
   },
   "keywords": [],
   "author": "",
@@ -13,5 +13,9 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "fast-check": "^4.8.0",
+    "vitest": "^4.1.9"
   }
 }

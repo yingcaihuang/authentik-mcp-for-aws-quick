@@ -47,10 +47,12 @@ function validateEmail(email) {
 }
 
 function validateUsername(username) {
-  // authentik username can be flexible; here we enforce readable safe pattern
-  // 3-64 chars, letters/numbers/_/.-
+  // Traditional username: 3-64 chars, letters/numbers/_/.-
   const re = /^[a-zA-Z0-9_.-]{3,64}$/;
-  return re.test(username);
+  if (re.test(username)) return true;
+  // Also accept valid email format as username (for AWS SCIM sync compatibility)
+  if (username.length <= 254 && validateEmail(username)) return true;
+  return false;
 }
 
 function validateDisplayName(name) {
@@ -1027,7 +1029,7 @@ server.tool(
     }
 
     const emailPrefix = email.split("@")[0] || "user";
-    const resolvedUsername = username || emailPrefix;
+    const resolvedUsername = username || email;
     const resolvedName = name || emailPrefix;
 
     if (!validateUsername(resolvedUsername)) {
@@ -1140,7 +1142,7 @@ server.tool(
       try {
         const email = item.email;
         const emailPrefix = email.split("@")[0] || "user";
-        const resolvedUsername = item.username || emailPrefix;
+        const resolvedUsername = item.username || email;
         const resolvedName = item.name || emailPrefix;
 
         if (!validateEmail(email)) throw new Error("邮箱格式不合法");
