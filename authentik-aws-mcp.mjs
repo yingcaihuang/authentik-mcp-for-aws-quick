@@ -341,6 +341,87 @@ async function getEventVolume({ history_days = 7, actions = [], query = "" } = {
   return apiRequest(`/events/events/volume/${q ? `?${q}` : ""}`);
 }
 
+async function listApplications({ search = "", page = 1, page_size = 50 } = {}) {
+  const query = new URLSearchParams();
+  if (search) query.set("search", search);
+  if (page) query.set("page", String(page));
+  if (page_size) query.set("page_size", String(page_size));
+  const q = query.toString();
+  return apiRequest(`/core/applications/${q ? `?${q}` : ""}`);
+}
+
+async function getApplicationBySlug(slug) {
+  return apiRequest(`/core/applications/${encodeURIComponent(slug)}/`);
+}
+
+async function findApplication({ slug, name }) {
+  // 优先按 slug 精确取；否则按名称搜索
+  if (slug) {
+    try {
+      return await getApplicationBySlug(slug);
+    } catch (_e) {
+      // 落到搜索兜底
+    }
+  }
+  const search = name || slug || "";
+  const data = await listApplications({ search, page: 1, page_size: 100 });
+  const items = data?.results || [];
+  if (name) {
+    return items.find((a) => a.name === name) || items.find((a) => a.slug === name) || null;
+  }
+  if (slug) {
+    return items.find((a) => a.slug === slug) || null;
+  }
+  return items[0] || null;
+}
+
+async function listProviders({ search = "", page = 1, page_size = 100, application_isnull } = {}) {
+  const query = new URLSearchParams();
+  if (search) query.set("search", search);
+  if (page) query.set("page", String(page));
+  if (page_size) query.set("page_size", String(page_size));
+  if (application_isnull !== undefined) {
+    query.set("application__isnull", application_isnull ? "true" : "false");
+  }
+  const q = query.toString();
+  return apiRequest(`/core/providers/${q ? `?${q}` : ""}`);
+}
+
+function summarizeProvider(p) {
+  if (!p) return null;
+  return {
+    pk: p.pk,
+    name: p.name,
+    // component 形如 oauth2provider / saml-provider / proxyprovider 等，用于判断类型
+    type: p.component || p.meta_model_name,
+    verbose_name: p.verbose_name,
+    assigned_application_name: p.assigned_application_name,
+    assigned_application_slug: p.assigned_application_slug,
+    authorization_flow: p.authorization_flow,
+    authentication_flow: p.authentication_flow,
+    invalidation_flow: p.invalidation_flow,
+  };
+}
+
+function summarizeApplication(a) {
+  if (!a) return null;
+  return {
+    pk: a.pk,
+    name: a.name,
+    slug: a.slug,
+    provider_pk: a.provider,
+    provider: summarizeProvider(a.provider_obj),
+    backchannel_providers: Array.isArray(a.backchannel_providers_obj)
+      ? a.backchannel_providers_obj.map(summarizeProvider)
+      : [],
+    launch_url: a.launch_url,
+    meta_launch_url: a.meta_launch_url,
+    meta_description: a.meta_description,
+    meta_publisher: a.meta_publisher,
+    group: a.group,
+  };
+}
+
 const server = new McpServer({
   name: "authentik-aws-mcp",
   version: "1.0.0",
@@ -1683,6 +1764,152 @@ server.tool(
                 },
                 timeseries,
               },
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "list_applications",
+  "列出应用（Applications）：每个应用附带其绑定的 Provider 概要（类型/名称/流程）",
+  {
+    search: z.string().optional().describe("可选：按名称/slug/描述搜索"),
+    limit: z.coerce.number().int().positive().max(200).optional().describe("返回条数，默认 50"),
+    page: z.coerce.number().int().positive().optional().describe("分页页码，默认 1"),
+  },
+  async ({ search, limit = 50, page = 1 }) => {
+    const data = await listApplications({ search, page, page_size: limit });
+    const results = (data?.results || []).map(summarizeApplication);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            { count: data?.count ?? results.length, page, page_size: limit, results },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "get_application",
+  "查看单个应用详情（按 slug 或名称），含绑定的 Provider 完整信息",
+  {
+    slug: z.string().optional().describe("应用 slug（精确）"),
+    name: z.string().optional().describe("应用名称（模糊/精确匹配）"),
+  },
+  async ({ slug, name }) => {
+    if (!slug && !name) {
+      throw new Error("请提供 slug 或 name");
+    }
+    const app = await findApplication({ slug, name });
+    if (!app) {
+      throw new Error(`未找到应用: ${slug || name}`);
+    }
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              application: summarizeApplication(app),
+              raw_provider_obj: app.provider_obj || null,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "list_providers",
+  "列出提供程序（Providers）：含类型（component）、所属应用等信息",
+  {
+    search: z.string().optional().describe("可选：按名称/所属应用名搜索"),
+    unassigned_only: z
+      .boolean()
+      .optional()
+      .describe("可选：为 true 时仅返回未绑定任何应用的 provider"),
+    limit: z.coerce.number().int().positive().max(200).optional().describe("返回条数，默认 100"),
+    page: z.coerce.number().int().positive().optional().describe("分页页码，默认 1"),
+  },
+  async ({ search, unassigned_only, limit = 100, page = 1 }) => {
+    const data = await listProviders({
+      search,
+      page,
+      page_size: limit,
+      application_isnull: unassigned_only === undefined ? undefined : unassigned_only,
+    });
+    const results = (data?.results || []).map(summarizeProvider);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            { count: data?.count ?? results.length, page, page_size: limit, results },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "get_application_with_provider",
+  "查看应用及其绑定的 Provider 详细信息：输入应用 slug 或名称，返回应用信息 + 绑定 Provider（含类型与流程）的完整详情",
+  {
+    slug: z.string().optional().describe("应用 slug（精确）"),
+    name: z.string().optional().describe("应用名称"),
+  },
+  async ({ slug, name }) => {
+    if (!slug && !name) {
+      throw new Error("请提供 slug 或 name");
+    }
+    const app = await findApplication({ slug, name });
+    if (!app) {
+      throw new Error(`未找到应用: ${slug || name}`);
+    }
+
+    const provider = summarizeProvider(app.provider_obj);
+    const backchannel = Array.isArray(app.backchannel_providers_obj)
+      ? app.backchannel_providers_obj.map(summarizeProvider)
+      : [];
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              message: provider
+                ? `应用 ${app.name} 绑定了 Provider: ${provider.name}（${provider.type}）`
+                : `应用 ${app.name} 当前未绑定主 Provider`,
+              application: {
+                pk: app.pk,
+                name: app.name,
+                slug: app.slug,
+                launch_url: app.launch_url,
+                meta_launch_url: app.meta_launch_url,
+                meta_description: app.meta_description,
+                meta_publisher: app.meta_publisher,
+                group: app.group,
+              },
+              bound_provider: provider,
+              backchannel_providers: backchannel,
             },
             null,
             2
