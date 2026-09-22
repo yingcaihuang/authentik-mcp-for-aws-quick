@@ -314,6 +314,33 @@ async function sendPasswordResetNotification({ userPk, email, username, password
   };
 }
 
+async function listEvents({ search = "", action = "", actions = [], username = "", page = 1, page_size = 20, ordering = "-created" } = {}) {
+  const query = new URLSearchParams();
+  if (search) query.set("search", search);
+  if (action) query.set("action", action);
+  if (username) query.set("username", username);
+  if (page) query.set("page", String(page));
+  if (page_size) query.set("page_size", String(page_size));
+  if (ordering) query.set("ordering", ordering);
+  // authentik supports repeated `actions` query params for multi-action filtering
+  for (const a of actions || []) {
+    if (a) query.append("actions", a);
+  }
+  const q = query.toString();
+  return apiRequest(`/events/events/${q ? `?${q}` : ""}`);
+}
+
+async function getEventVolume({ history_days = 7, actions = [], query = "" } = {}) {
+  const params = new URLSearchParams();
+  if (history_days) params.set("history_days", String(history_days));
+  if (query) params.set("query", query);
+  for (const a of actions || []) {
+    if (a) params.append("actions", a);
+  }
+  const q = params.toString();
+  return apiRequest(`/events/events/volume/${q ? `?${q}` : ""}`);
+}
+
 const server = new McpServer({
   name: "authentik-aws-mcp",
   version: "1.0.0",
@@ -324,8 +351,8 @@ server.tool(
   "列出 authentik 组",
   {
     search: z.string().optional().describe("可选：按组名模糊搜索"),
-    page: z.number().int().positive().optional(),
-    page_size: z.number().int().positive().max(200).optional(),
+    page: z.coerce.number().int().positive().optional(),
+    page_size: z.coerce.number().int().positive().max(200).optional(),
   },
   async ({ search, page, page_size }) => {
     const data = await listGroups({ search, page, page_size });
@@ -361,8 +388,8 @@ server.tool(
     search: z.string().optional().describe("可选：按用户名/邮箱搜索"),
     group_name: z.string().optional().describe("可选：按组名过滤"),
     group_pk: z.string().optional().describe("可选：按组 PK 过滤"),
-    page: z.number().int().positive().optional(),
-    page_size: z.number().int().positive().max(200).optional(),
+    page: z.coerce.number().int().positive().optional(),
+    page_size: z.coerce.number().int().positive().max(200).optional(),
   },
   async ({ search = "", group_name, group_pk, page = 1, page_size = 50 }) => {
     let usersData = await listUsers({ search, page, page_size });
@@ -509,7 +536,7 @@ server.tool(
   {
     username: z.string().optional(),
     email: z.string().email().optional(),
-    user_pk: z.number().int().positive().optional(),
+    user_pk: z.coerce.number().int().positive().optional(),
     if_not_exists: z.boolean().optional().describe("用户不存在时是否不报错，默认 true"),
   },
   async ({ username, email, user_pk, if_not_exists = true }) => {
@@ -564,7 +591,7 @@ server.tool(
         z.object({
           email: z.string().email().optional(),
           username: z.string().optional(),
-          user_pk: z.number().int().positive().optional(),
+          user_pk: z.coerce.number().int().positive().optional(),
         })
       )
       .min(1),
@@ -728,7 +755,7 @@ server.tool(
   {
     username: z.string().optional(),
     email: z.string().email().optional(),
-    user_pk: z.number().int().positive().optional(),
+    user_pk: z.coerce.number().int().positive().optional(),
   },
   async ({ username, email, user_pk }) => {
     let resolvedUserPk = user_pk;
@@ -757,7 +784,7 @@ server.tool(
   {
     username: z.string().optional(),
     email: z.string().email().optional(),
-    user_pk: z.number().int().positive().optional(),
+    user_pk: z.coerce.number().int().positive().optional(),
   },
   async ({ username, email, user_pk }) => {
     let resolvedUserPk = user_pk;
@@ -786,7 +813,7 @@ server.tool(
   {
     username: z.string().optional(),
     email: z.string().email().optional(),
-    user_pk: z.number().int().positive().optional(),
+    user_pk: z.coerce.number().int().positive().optional(),
     group_name: z.string().optional(),
     group_pk: z.string().optional(),
   },
@@ -830,7 +857,7 @@ server.tool(
   {
     username: z.string().optional(),
     email: z.string().email().optional(),
-    user_pk: z.number().int().positive().optional(),
+    user_pk: z.coerce.number().int().positive().optional(),
     group_name: z.string().optional(),
     group_pk: z.string().optional(),
   },
@@ -874,7 +901,7 @@ server.tool(
   {
     username: z.string().optional(),
     email: z.string().email().optional(),
-    user_pk: z.number().int().positive().optional(),
+    user_pk: z.coerce.number().int().positive().optional(),
     groups: z.array(z.string().min(1)).describe("目标组名列表"),
     mode: z.enum(["merge", "replace"]).optional().describe("merge=并集，replace=完全替换，默认 merge"),
     create_missing_groups: z.boolean().optional().describe("缺失组是否自动创建，默认 true"),
@@ -1222,7 +1249,7 @@ server.tool(
   {
     username: z.string().optional(),
     email: z.string().email().optional(),
-    user_pk: z.number().int().positive().optional(),
+    user_pk: z.coerce.number().int().positive().optional(),
     password: z.string().optional().describe("可选：不传则自动生成随机复杂密码"),
   },
   async ({ username, email, user_pk, password }) => {
@@ -1283,7 +1310,7 @@ server.tool(
         z.object({
           email: z.string().email().optional(),
           username: z.string().optional(),
-          user_pk: z.number().int().positive().optional(),
+          user_pk: z.coerce.number().int().positive().optional(),
           password: z.string().optional().describe("可选：该用户指定新密码；不传则自动生成"),
         })
       )
@@ -1370,7 +1397,7 @@ server.tool(
   {
     username: z.string().optional(),
     email: z.string().email().optional(),
-    user_pk: z.number().int().positive().optional(),
+    user_pk: z.coerce.number().int().positive().optional(),
     password: z.string().optional().describe("可选：不传则自动生成随机复杂密码"),
     require_email_success: z.boolean().optional().describe("是否要求邮件必须发送成功，默认 false"),
   },
@@ -1432,6 +1459,230 @@ server.tool(
               },
               new_password: nextPassword,
               new_password_b64: toBase64(nextPassword),
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "list_recent_events",
+  "查看最近事件（Recent events）：按时间倒序返回 authentik 审计事件，可按 action/actions/username 过滤",
+  {
+    action: z.string().optional().describe("可选：按单个事件动作过滤（模糊匹配），如 login、logout、authorize_application"),
+    actions: z.array(z.string()).optional().describe("可选：按多个事件动作精确过滤（任一命中）"),
+    username: z.string().optional().describe("可选：按用户名过滤"),
+    search: z.string().optional().describe("可选：全文搜索（用户/动作/IP/上下文等）"),
+    limit: z.coerce.number().int().positive().max(200).optional().describe("返回条数，默认 20"),
+    page: z.coerce.number().int().positive().optional().describe("分页页码，默认 1"),
+  },
+  async ({ action, actions = [], username, search, limit = 20, page = 1 }) => {
+    const data = await listEvents({
+      search,
+      action,
+      actions,
+      username,
+      page,
+      page_size: limit,
+      ordering: "-created",
+    });
+
+    const results = (data?.results || []).map((e) => ({
+      pk: e.pk,
+      action: e.action,
+      user: e.user
+        ? { pk: e.user.pk, username: e.user.username, email: e.user.email }
+        : null,
+      app: e.app,
+      client_ip: e.client_ip,
+      created: e.created,
+      brand: e.brand?.name,
+      context: e.context,
+    }));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              count: data?.count ?? results.length,
+              page,
+              page_size: limit,
+              results,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "get_logins_authorizations_volume",
+  "登录与授权时间序列（Logins and authorizations over the last week）：默认统计最近 7 天的 login 与 authorize_application 事件量，后端按小时聚合并对齐到时间桶",
+  {
+    history_days: z
+      .number()
+      .int()
+      .positive()
+      .max(90)
+      .optional()
+      .describe("统计天数，默认 7（最近一周），最大 90"),
+    actions: z
+      .array(z.string())
+      .optional()
+      .describe("要统计的事件动作，默认 [login, authorize_application]"),
+    query: z.string().optional().describe("可选：AKQL 高级过滤表达式"),
+  },
+  async ({ history_days = 7, actions, query }) => {
+    const targetActions =
+      actions && actions.length ? actions : ["login", "authorize_application"];
+
+    const data = await getEventVolume({ history_days, actions: targetActions, query });
+
+    // API 返回形如 [{ action, time, count }]，按时间桶聚合成图表友好的序列
+    const series = Array.isArray(data) ? data : [];
+    const buckets = {};
+    for (const row of series) {
+      const t = row.time;
+      if (!buckets[t]) buckets[t] = { time: t, total: 0, by_action: {} };
+      buckets[t].by_action[row.action] = (buckets[t].by_action[row.action] || 0) + row.count;
+      buckets[t].total += row.count;
+    }
+    const timeseries = Object.values(buckets).sort((a, b) =>
+      String(a.time).localeCompare(String(b.time))
+    );
+
+    const totalByAction = {};
+    let grandTotal = 0;
+    for (const row of series) {
+      totalByAction[row.action] = (totalByAction[row.action] || 0) + row.count;
+      grandTotal += row.count;
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              message: "登录与授权事件量统计",
+              history_days,
+              actions: targetActions,
+              summary: {
+                grand_total: grandTotal,
+                by_action: totalByAction,
+                bucket_count: timeseries.length,
+              },
+              timeseries,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "get_security_overview",
+  "最近安全统计（Security overview）：一次性汇总输出两个维度——最近事件（Recent events）与最近一周登录/授权时间序列（Logins and authorizations）。用户说“查看最近的安全统计”时使用",
+  {
+    history_days: z
+      .number()
+      .int()
+      .positive()
+      .max(90)
+      .optional()
+      .describe("时间序列统计天数，默认 7（最近一周），最大 90"),
+    recent_limit: z
+      .number()
+      .int()
+      .positive()
+      .max(200)
+      .optional()
+      .describe("最近事件返回条数，默认 20"),
+    volume_actions: z
+      .array(z.string())
+      .optional()
+      .describe("时间序列统计的事件动作，默认 [login, authorize_application]"),
+  },
+  async ({ history_days = 7, recent_limit = 20, volume_actions }) => {
+    const targetActions =
+      volume_actions && volume_actions.length
+        ? volume_actions
+        : ["login", "authorize_application"];
+
+    // 两个维度并行获取，互不依赖
+    const [eventsData, volumeData] = await Promise.all([
+      listEvents({ page: 1, page_size: recent_limit, ordering: "-created" }),
+      getEventVolume({ history_days, actions: targetActions }),
+    ]);
+
+    // ---- 维度一：最近事件 ----
+    const recentEvents = (eventsData?.results || []).map((e) => ({
+      pk: e.pk,
+      action: e.action,
+      user: e.user
+        ? { pk: e.user.pk, username: e.user.username, email: e.user.email }
+        : null,
+      app: e.app,
+      client_ip: e.client_ip,
+      created: e.created,
+      brand: e.brand?.name,
+    }));
+
+    // ---- 维度二：登录/授权时间序列 ----
+    const series = Array.isArray(volumeData) ? volumeData : [];
+    const buckets = {};
+    for (const row of series) {
+      const t = row.time;
+      if (!buckets[t]) buckets[t] = { time: t, total: 0, by_action: {} };
+      buckets[t].by_action[row.action] = (buckets[t].by_action[row.action] || 0) + row.count;
+      buckets[t].total += row.count;
+    }
+    const timeseries = Object.values(buckets).sort((a, b) =>
+      String(a.time).localeCompare(String(b.time))
+    );
+
+    const totalByAction = {};
+    let grandTotal = 0;
+    for (const row of series) {
+      totalByAction[row.action] = (totalByAction[row.action] || 0) + row.count;
+      grandTotal += row.count;
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              message: "最近安全统计概览",
+              generated_at: new Date().toISOString(),
+              recent_events: {
+                count: eventsData?.count ?? recentEvents.length,
+                returned: recentEvents.length,
+                results: recentEvents,
+              },
+              logins_and_authorizations: {
+                history_days,
+                actions: targetActions,
+                summary: {
+                  grand_total: grandTotal,
+                  by_action: totalByAction,
+                  bucket_count: timeseries.length,
+                },
+                timeseries,
+              },
             },
             null,
             2

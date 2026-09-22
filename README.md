@@ -21,6 +21,9 @@
 - 重置用户密码（支持自动生成随机密码并返回）
 - 批量重置用户密码（支持 email/username/user_pk 混合输入）
 - 强制重置并尝试发送邮件通知
+- 查看最近事件（Recent events）
+- 最近一周登录与授权时间序列（Logins and authorizations，按时间桶聚合）
+- 最近安全统计概览（一次输出上面两个维度）
 
 服务脚本：`authentik-aws-mcp.mjs`
 
@@ -439,6 +442,54 @@ npm pkg set type=module
 }
 ```
 
+### 4.18 `list_recent_events`
+
+查看最近事件（按时间倒序），可按 `action` / `actions` / `username` 过滤：
+
+```json
+{
+  "actions": ["login", "authorize_application"],
+  "username": "dev",
+  "limit": 20,
+  "page": 1
+}
+```
+
+返回中每条事件包含：`action`、`user`、`app`、`client_ip`、`created`、`brand`、`context`。
+
+### 4.19 `get_logins_authorizations_volume`
+
+统计最近一周（默认 7 天）的登录与授权事件量，后端按小时聚合并对齐到时间桶：
+
+```json
+{
+  "history_days": 7,
+  "actions": ["login", "authorize_application"]
+}
+```
+
+返回 `timeseries`（每个时间桶含 `total` 和 `by_action`）与 `summary`（`grand_total`、`by_action`、`bucket_count`）。
+
+> 说明：authentik 面板卡片标签写的是 "per 8 hours"，但后端 `volume` 接口实际按小时聚合后对齐到时间桶。本工具直接使用接口返回的 `time` 字段，不自行改动粒度，保证与 authentik 一致。
+
+### 4.20 `get_security_overview`（最近安全统计，推荐）
+
+一次调用同时输出两个维度：最近事件 + 最近一周登录/授权时间序列。适合"我想查看一下最近的安全统计"这类需求：
+
+```json
+{
+  "history_days": 7,
+  "recent_limit": 20
+}
+```
+
+返回结构：
+
+- `recent_events`：最近事件列表
+- `logins_and_authorizations`：时间序列 + 汇总
+
+参数均可选，不传则使用默认值（7 天、20 条、`login` + `authorize_application`）。
+
 ---
 
 ## 5) 自检
@@ -756,7 +807,50 @@ node --check authentik-aws-mcp.mjs
 }
 ```
 
-### 6.19 通用对话模板（推荐）
+### 6.19 `list_recent_events`
+
+自然语言：
+
+> 看一下最近的登录和授权事件，最多 20 条。
+
+参数 JSON：
+
+```json
+{
+  "actions": ["login", "authorize_application"],
+  "limit": 20
+}
+```
+
+### 6.20 `get_logins_authorizations_volume`
+
+自然语言：
+
+> 统计最近一周的登录和授权量。
+
+参数 JSON：
+
+```json
+{
+  "history_days": 7
+}
+```
+
+### 6.21 `get_security_overview`（最近安全统计推荐）
+
+自然语言：
+
+> 我想查看一下最近的安全统计。
+
+参数 JSON：
+
+```json
+{}
+```
+
+会一次性返回最近事件与最近一周登录/授权时间序列两个维度。
+
+### 6.22 通用对话模板（推荐）
 
 你可以固定这样对大模型说：
 
@@ -824,6 +918,12 @@ node --check authentik-aws-mcp.mjs
   "email": "dev@qq.com"
 }
 ```
+
+### 我想查看最近的安全统计
+
+直接说"我想查看一下最近的安全统计"即可，大模型会调用 `get_security_overview`，一次返回最近事件和最近一周登录/授权时间序列两个维度。
+
+如果只想看其中一个维度，可分别调用 `list_recent_events` 或 `get_logins_authorizations_volume`。
 
 ### 批量创建后密码登录失败怎么办
 
