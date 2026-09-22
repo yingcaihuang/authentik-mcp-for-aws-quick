@@ -1,0 +1,7 @@
+{
+    "chat.agent.sandbox.fileSystem.windows": {
+        "denyRead": [],
+        "allowRead": [],
+        "allowWrite": []
+    }
+}
