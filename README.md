@@ -966,7 +966,29 @@ node --check authentik-aws-mcp.mjs
 {}
 ```
 
-### 6.23 `get_application_with_provider`
+### 6.23 `get_application`
+
+自然语言：
+
+> 查看应用 newapi 的详情，包括它绑定的 Provider。
+
+参数 JSON（按 slug）：
+
+```json
+{
+  "slug": "newapi"
+}
+```
+
+或按名称：
+
+```json
+{
+  "name": "newapi"
+}
+```
+
+### 6.24 `get_application_with_provider`
 
 自然语言：
 
@@ -980,7 +1002,7 @@ node --check authentik-aws-mcp.mjs
 }
 ```
 
-### 6.24 `list_providers`
+### 6.25 `list_providers`
 
 自然语言：
 
@@ -992,7 +1014,7 @@ node --check authentik-aws-mcp.mjs
 {}
 ```
 
-### 6.25 `get_oauth2_provider_config`
+### 6.26 `get_oauth2_provider_config`
 
 自然语言：
 
@@ -1016,7 +1038,7 @@ node --check authentik-aws-mcp.mjs
 
 返回 `client_id` / `client_secret` / `redirect_uris` / `scopes` / `oidc_endpoints`。⚠️ 含敏感凭证。
 
-### 6.26 通用对话模板（推荐）
+### 6.27 通用对话模板（推荐）
 
 你可以固定这样对大模型说：
 
