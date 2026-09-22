@@ -422,6 +422,50 @@ function summarizeApplication(a) {
   };
 }
 
+async function getOAuth2Provider(providerId) {
+  // OAuth2 类型专属端点，返回 client_id/client_secret/redirect_uris/signing_key 等完整配置
+  return apiRequest(`/providers/oauth2/${encodeURIComponent(providerId)}/`);
+}
+
+async function getOAuth2SetupUrls(providerId) {
+  // OIDC 端点 URL（issuer/authorize/token/userinfo/jwks/logout）
+  // 该端点要求 provider 已绑定 application，否则 404
+  try {
+    return await apiRequest(`/providers/oauth2/${encodeURIComponent(providerId)}/setup_urls/`);
+  } catch (e) {
+    return { _error: String(e?.message || e) };
+  }
+}
+
+async function getScopeMappingById(pmId) {
+  // 将 property mapping / scope mapping 的 ID 解析为可读的 scope 名称
+  try {
+    return await apiRequest(`/propertymappings/provider/scope/${encodeURIComponent(pmId)}/`);
+  } catch (e) {
+    return { pk: pmId, _error: String(e?.message || e) };
+  }
+}
+
+async function resolveScopeMappings(ids = []) {
+  const list = Array.isArray(ids) ? ids : [];
+  const resolved = await Promise.all(
+    list.map(async (id) => {
+      const m = await getScopeMappingById(id);
+      if (m && m._error) {
+        return { pk: id, resolved: false, error: m._error };
+      }
+      return {
+        pk: m.pk,
+        resolved: true,
+        scope_name: m.scope_name,
+        name: m.name,
+        description: m.description,
+      };
+    })
+  );
+  return resolved;
+}
+
 const server = new McpServer({
   name: "authentik-aws-mcp",
   version: "1.0.0",
@@ -1910,6 +1954,113 @@ server.tool(
               },
               bound_provider: provider,
               backchannel_providers: backchannel,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "get_oauth2_provider_config",
+  "获取 OAuth2/OpenID Provider 完整配置：client_id、client_secret、回调地址（redirect URIs）、签名密钥、scope 明细与 OIDC 端点 URL。可传 provider_id（数字 PK），也可传应用 slug/名称自动解析其绑定的 Provider。注意：返回内容包含 client_secret 等敏感凭证，请在安全渠道使用",
+  {
+    provider_id: z.coerce
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("OAuth2 Provider 的 PK（数字 ID），例如 22。与 application_slug/application_name 三选一"),
+    application_slug: z
+      .string()
+      .optional()
+      .describe("应用 slug，例如 newapi。将自动解析该应用绑定的 Provider"),
+    application_name: z
+      .string()
+      .optional()
+      .describe("应用名称。将自动解析该应用绑定的 Provider"),
+    include_setup_urls: z
+      .boolean()
+      .optional()
+      .describe("是否附带 OIDC 端点 URL（issuer/authorize/token 等），默认 true"),
+    resolve_scopes: z
+      .boolean()
+      .optional()
+      .describe("是否把 property_mappings 的 ID 解析为 scope 名称，默认 true"),
+  },
+  async ({ provider_id, application_slug, application_name, include_setup_urls = true, resolve_scopes = true }) => {
+    let resolvedProviderId = provider_id;
+
+    // 未直接给 provider_id 时，尝试从应用 slug/名称解析其绑定的 Provider
+    if (!resolvedProviderId) {
+      if (!application_slug && !application_name) {
+        throw new Error("请提供 provider_id，或提供 application_slug / application_name 以自动解析绑定的 Provider");
+      }
+      const app = await findApplication({ slug: application_slug, name: application_name });
+      if (!app) {
+        throw new Error(`未找到应用: ${application_slug || application_name}`);
+      }
+      if (!app.provider) {
+        throw new Error(`应用 ${app.name} 未绑定主 Provider，无法获取 OAuth2 配置`);
+      }
+      resolvedProviderId = app.provider;
+    }
+
+    const provider = await getOAuth2Provider(resolvedProviderId);
+
+    const setupUrls = include_setup_urls ? await getOAuth2SetupUrls(resolvedProviderId) : undefined;
+
+    let scopes;
+    if (resolve_scopes) {
+      scopes = await resolveScopeMappings(provider.property_mappings || []);
+    }
+
+    const redirectUris = Array.isArray(provider.redirect_uris)
+      ? provider.redirect_uris.map((r) =>
+          typeof r === "string"
+            ? { url: r }
+            : { matching_mode: r.matching_mode, url: r.url, redirect_uri_type: r.redirect_uri_type }
+        )
+      : provider.redirect_uris;
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              message: `OAuth2 Provider 完整配置: ${provider.name} (pk=${provider.pk})`,
+              warning: "包含 client_secret 等敏感凭证，请勿在不安全渠道传播",
+              provider: {
+                pk: provider.pk,
+                name: provider.name,
+                type: provider.component,
+                client_type: provider.client_type,
+                client_id: provider.client_id,
+                client_secret: provider.client_secret,
+                grant_types: provider.grant_types,
+                redirect_uris: redirectUris,
+                signing_key: provider.signing_key,
+                encryption_key: provider.encryption_key,
+                sub_mode: provider.sub_mode,
+                issuer_mode: provider.issuer_mode,
+                include_claims_in_id_token: provider.include_claims_in_id_token,
+                access_code_validity: provider.access_code_validity,
+                access_token_validity: provider.access_token_validity,
+                refresh_token_validity: provider.refresh_token_validity,
+                authorization_flow: provider.authorization_flow,
+                authentication_flow: provider.authentication_flow,
+                invalidation_flow: provider.invalidation_flow,
+                assigned_application_name: provider.assigned_application_name,
+                assigned_application_slug: provider.assigned_application_slug,
+              },
+              scopes: resolve_scopes
+                ? scopes
+                : (provider.property_mappings || []).map((id) => ({ pk: id, resolved: false })),
+              oidc_endpoints: include_setup_urls ? setupUrls : undefined,
             },
             null,
             2

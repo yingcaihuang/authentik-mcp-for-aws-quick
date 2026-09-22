@@ -24,6 +24,11 @@
 - 查看最近事件（Recent events）
 - 最近一周登录与授权时间序列（Logins and authorizations，按时间桶聚合）
 - 最近安全统计概览（一次输出上面两个维度）
+- 列出应用（Applications，附带绑定的 Provider 概要）
+- 查看单个应用详情（含绑定 Provider）
+- 列出提供程序（Providers，含类型与所属应用）
+- 查看应用及其绑定的 Provider 详细信息
+- 获取 OAuth2/OpenID Provider 完整配置（client_id/secret、回调地址、scope、OIDC 端点）
 
 服务脚本：`authentik-aws-mcp.mjs`
 
@@ -490,6 +495,105 @@ npm pkg set type=module
 
 参数均可选，不传则使用默认值（7 天、20 条、`login` + `authorize_application`）。
 
+### 4.21 `list_applications`
+
+列出应用，每个应用附带绑定的 Provider 概要：
+
+```json
+{
+  "search": "aws",
+  "limit": 50,
+  "page": 1
+}
+```
+
+每个应用返回：`name`、`slug`、`provider_pk`、`provider`（类型/名称/流程）、`launch_url` 等。
+
+### 4.22 `get_application`
+
+按 slug 或名称查看单个应用详情（含绑定 Provider 完整信息）：
+
+```json
+{
+  "slug": "newapi"
+}
+```
+
+或按名称：
+
+```json
+{
+  "name": "newapi"
+}
+```
+
+### 4.23 `list_providers`
+
+列出所有 Provider，含类型（`component`，如 `oauth2provider`/`saml-provider`）与所属应用：
+
+```json
+{
+  "search": "newapi",
+  "limit": 100
+}
+```
+
+只看未绑定任何应用的 Provider：
+
+```json
+{
+  "unassigned_only": true
+}
+```
+
+### 4.24 `get_application_with_provider`（应用 + 绑定 Provider 详情）
+
+输入应用 slug 或名称，返回应用信息 + 绑定 Provider（类型与流程）的详细信息：
+
+```json
+{
+  "name": "newapi"
+}
+```
+
+### 4.25 `get_oauth2_provider_config`（OAuth2 完整配置）
+
+获取 OAuth2/OpenID Provider 的完整配置。三种定位方式任选其一：
+
+方式 A：直接传 Provider 数字 PK
+
+```json
+{
+  "provider_id": 22
+}
+```
+
+方式 B：传应用 slug（自动解析该应用绑定的 Provider）
+
+```json
+{
+  "application_slug": "newapi"
+}
+```
+
+方式 C：传应用名称
+
+```json
+{
+  "application_name": "newapi"
+}
+```
+
+返回内容：
+
+- `provider`：`client_id`、`client_secret`、`redirect_uris`（回调地址）、`signing_key`、`sub_mode`、各类 token 有效期、流程等
+- `scopes`：把 property mapping ID 解析为 scope 名称（如 openid/email/profile）+ description
+- `oidc_endpoints`：issuer/authorize/token/user_info/jwks/logout 等 URL
+
+> ⚠️ 注意：返回内容包含 `client_secret` 等敏感凭证，请仅在安全渠道使用。
+>
+> 可选参数：`include_setup_urls`（默认 true）、`resolve_scopes`（默认 true），需要极简输出时可分别关闭。
+
 ---
 
 ## 5) 自检
@@ -850,7 +954,69 @@ node --check authentik-aws-mcp.mjs
 
 会一次性返回最近事件与最近一周登录/授权时间序列两个维度。
 
-### 6.22 通用对话模板（推荐）
+### 6.22 `list_applications`
+
+自然语言：
+
+> 列出所有应用，把每个应用绑定的 Provider 也一起显示。
+
+参数 JSON：
+
+```json
+{}
+```
+
+### 6.23 `get_application_with_provider`
+
+自然语言：
+
+> 查看应用 newapi 绑定了哪个 Provider，给我详细信息。
+
+参数 JSON：
+
+```json
+{
+  "name": "newapi"
+}
+```
+
+### 6.24 `list_providers`
+
+自然语言：
+
+> 列出所有 Provider，告诉我每个的类型和所属应用。
+
+参数 JSON：
+
+```json
+{}
+```
+
+### 6.25 `get_oauth2_provider_config`
+
+自然语言：
+
+> 帮我拉取应用 newapi 的 OAuth2 完整配置，包括 client_id、回调地址和 scope。
+
+参数 JSON（用应用 slug，推荐；不用记数字 PK）：
+
+```json
+{
+  "application_slug": "newapi"
+}
+```
+
+或直接用 Provider 数字 PK：
+
+```json
+{
+  "provider_id": 22
+}
+```
+
+返回 `client_id` / `client_secret` / `redirect_uris` / `scopes` / `oidc_endpoints`。⚠️ 含敏感凭证。
+
+### 6.26 通用对话模板（推荐）
 
 你可以固定这样对大模型说：
 
